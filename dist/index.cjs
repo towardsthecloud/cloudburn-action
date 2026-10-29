@@ -55153,8 +55153,9 @@ var extractSuppressionComments = (contents, path, syntax, excludedLines = /* @__
   }
   return comments;
 };
-var findResourceSuppressions = (comments, startLine, endLine) => {
-  const firstRelevantLine = startLine - 1;
+var findResourceSuppressions = (comments, startLine, endLine, previousResourceEndLine = 0) => {
+  const aboveLine = startLine - 1 > previousResourceEndLine ? startLine - 1 : void 0;
+  const firstRelevantLine = aboveLine ?? startLine;
   let lowerBound = 0;
   let upperBound = comments.length;
   while (lowerBound < upperBound) {
@@ -55172,7 +55173,7 @@ var findResourceSuppressions = (comments, startLine, endLine) => {
     if (!comment || comment.line > endLine) {
       break;
     }
-    if (comment.line === firstRelevantLine || comment.line >= startLine && comment.line <= endLine) {
+    if (comment.line === aboveLine || comment.line >= startLine && comment.line <= endLine) {
       suppressions.push(comment.suppression);
     }
   }
@@ -55352,12 +55353,19 @@ var toIaCResources = async (path, relativePath) => {
   if (!(0, import_yaml.isMap)(resourcesNode)) {
     return createEmptyIaCParseResult();
   }
+  let previousResourceEndLine = 0;
   return {
     diagnostics: [],
     resources: resourcesNode.items.flatMap((item) => {
       const pair = item;
       if (!(0, import_yaml.isScalar)(pair.key) || typeof pair.key.value !== "string" || !(0, import_yaml.isMap)(pair.value)) {
         return [];
+      }
+      const resourceLocation = toSourceLocation(pair.key, lineCounter, relativePath);
+      const resourceEndLine = toEndLine(pair.value, lineCounter) ?? resourceLocation?.line;
+      const precedingResourceEndLine = previousResourceEndLine;
+      if (resourceEndLine) {
+        previousResourceEndLine = resourceEndLine;
       }
       const resourceTypeNode = pair.value.get("Type", true);
       if (!(0, import_yaml.isScalar)(resourceTypeNode) || typeof resourceTypeNode.value !== "string") {
@@ -55378,9 +55386,12 @@ var toIaCResources = async (path, relativePath) => {
           return [[resourcePair.key.value, toRawValue(resourcePair.value)]];
         })
       );
-      const resourceLocation = toSourceLocation(pair.key, lineCounter, relativePath);
-      const resourceEndLine = toEndLine(pair.value, lineCounter) ?? resourceLocation?.line;
-      const suppressions = resourceLocation && resourceEndLine ? findResourceSuppressions(suppressionComments, resourceLocation.line, resourceEndLine) : [];
+      const suppressions = resourceLocation && resourceEndLine ? findResourceSuppressions(
+        suppressionComments,
+        resourceLocation.line,
+        resourceEndLine,
+        precedingResourceEndLine
+      ) : [];
       return [
         {
           provider: "aws",
@@ -55408,6 +55419,7 @@ var locateResourceBlocks = (contents, path) => {
   const suppressionComments = extractSuppressionComments(contents, path, "terraform");
   const lexerState = createTerraformLexerState();
   let depth = 0;
+  let previousResourceEndLine = 0;
   let openBlock;
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex] ?? "";
@@ -55447,8 +55459,14 @@ var locateResourceBlocks = (contents, path) => {
       locations.set(toResourceLocationKey(openBlock.resourceType, openBlock.resourceName), {
         blockLocation: openBlock.blockLocation,
         attributeLocations: openBlock.attributeLocations,
-        suppressions: findResourceSuppressions(suppressionComments, openBlock.startLine, lineIndex + 1)
+        suppressions: findResourceSuppressions(
+          suppressionComments,
+          openBlock.startLine,
+          lineIndex + 1,
+          previousResourceEndLine
+        )
       });
+      previousResourceEndLine = lineIndex + 1;
       openBlock = void 0;
     }
   }
@@ -55456,7 +55474,12 @@ var locateResourceBlocks = (contents, path) => {
     locations.set(toResourceLocationKey(openBlock.resourceType, openBlock.resourceName), {
       blockLocation: openBlock.blockLocation,
       attributeLocations: openBlock.attributeLocations,
-      suppressions: findResourceSuppressions(suppressionComments, openBlock.startLine, openBlock.startLine)
+      suppressions: findResourceSuppressions(
+        suppressionComments,
+        openBlock.startLine,
+        openBlock.startLine,
+        previousResourceEndLine
+      )
     });
   }
   return locations;
@@ -57276,8 +57299,8 @@ var getInputs = () => {
 };
 
 // src/version.ts
-var ACTION_VERSION = "1.0.7";
-var SDK_VERSION = "0.38.3";
+var ACTION_VERSION = "1.0.9";
+var SDK_VERSION = "0.38.5";
 var RULES_VERSION = "0.35.2";
 
 // src/markdown.ts
