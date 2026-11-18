@@ -57299,8 +57299,8 @@ var getInputs = () => {
 };
 
 // src/version.ts
-var ACTION_VERSION = "1.0.9";
-var SDK_VERSION = "0.38.5";
+var ACTION_VERSION = "1.0.10";
+var SDK_VERSION = "0.38.6";
 var RULES_VERSION = "0.35.2";
 
 // src/markdown.ts
